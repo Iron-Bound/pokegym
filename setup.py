@@ -5,19 +5,17 @@ setup(
     name="pokegym",
     description="Pokemon Red Gymnasium environment for reinforcement learning",
     long_description_content_type="text/markdown",
-    version=open('pokegym/version.py').read().split()[-1].strip("'"),
+    version=open("pokegym/version.py").read().split()[-1].strip("'"),
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        'pyboy<2.0.0',
-        'gymnasium>=0.29',
-        'numpy',
+        "pyboy<2.0.0",
+        "gymnasium>=0.29",
+        "numpy",
+        "scikit-image==0.21.0",
+        "opencv-python>=3.4.17",
     ],
-    entry_points = {
-        'console_scripts': [
-            'pokegym.play = pokegym.environment:play'
-        ]
-    },
+    entry_points={"console_scripts": ["pokegym.play = pokegym.environment:play"]},
     python_requires=">=3.8",
     license="MIT",
     # @pdubs: Put your info here

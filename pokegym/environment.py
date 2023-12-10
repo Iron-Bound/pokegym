@@ -1,17 +1,32 @@
 from pdb import set_trace as T
 from gymnasium import Env, spaces
 import numpy as np
+from collections import defaultdict
 import os
 
-from pokegym.pyboy_binding import (ACTIONS, make_env, open_state_file,
-    load_pyboy_state, run_action_on_emulator)
+from skimage import measure
+import cv2
+
+from pokegym.pyboy_binding import (
+    ACTIONS,
+    make_env,
+    open_state_file,
+    load_pyboy_state,
+    run_action_on_emulator,
+)
 from pokegym import ram_map, game_map
 
 
 def play():
-    '''Creates an environment and plays it'''
-    env = Environment(rom_path='pokemon_red.gb', state_path=None, headless=False,
-        disable_input=False, sound=False, sound_emulated=False, verbose=True
+    """Creates an environment and plays it"""
+    env = Environment(
+        rom_path="pokemon_red.gb",
+        state_path=None,
+        headless=False,
+        disable_input=False,
+        sound=False,
+        sound_emulated=False,
+        verbose=True,
     )
 
     env.reset()
@@ -24,14 +39,14 @@ def play():
 
     # Create a mapping from WindowEvent to action index
     window_event_to_action = {
-        'PRESS_ARROW_DOWN': 0,
-        'PRESS_ARROW_LEFT': 1,
-        'PRESS_ARROW_RIGHT': 2,
-        'PRESS_ARROW_UP': 3,
-        'PRESS_BUTTON_A': 4,
-        'PRESS_BUTTON_B': 5,
-        'PRESS_BUTTON_START': 6,
-        'PRESS_BUTTON_SELECT': 7,
+        "PRESS_ARROW_DOWN": 0,
+        "PRESS_ARROW_LEFT": 1,
+        "PRESS_ARROW_RIGHT": 2,
+        "PRESS_ARROW_UP": 3,
+        "PRESS_BUTTON_A": 4,
+        "PRESS_BUTTON_B": 5,
+        "PRESS_BUTTON_START": 6,
+        "PRESS_BUTTON_SELECT": 7,
         # Add more mappings if necessary
     }
 
@@ -48,7 +63,8 @@ def play():
             if event_str in window_event_to_action:
                 action_index = window_event_to_action[event_str]
                 observation, reward, done, _, info = env.step(
-                    action_index, fast_video=False)
+                    action_index, fast_video=False
+                )
 
                 # Check for game over
                 if done:
@@ -58,33 +74,73 @@ def play():
                 # Additional game logic or information display can go here
                 print(f"new Reward: {reward}\n")
 
-class Base:
-    def __init__(self, rom_path='pokemon_red.gb',
-            state_path=None, headless=True, quiet=False, **kwargs):
-        '''Creates a PokemonRed environment'''
-        if state_path is None:
-            state_path = __file__.rstrip('environment.py') + 'has_pokedex_nballs.state'
 
-        self.game, self.screen = make_env(
-            rom_path, headless, quiet, **kwargs)
+class Base:
+    def __init__(
+        self,
+        rom_path="pokemon_red.gb",
+        state_path=None,
+        headless=True,
+        quiet=False,
+        **kwargs,
+    ):
+        """Creates a PokemonRed environment"""
+        if state_path is None:
+            state_path = __file__.rstrip("environment.py") + "has_pokedex_nballs.state"
+
+        self.game, self.screen = make_env(rom_path, headless, quiet, **kwargs)
 
         self.initial_state = open_state_file(state_path)
         self.headless = headless
+        self.mem_padding = 2
+        self.memory_shape = 80
+        self.use_screen_memory = True
 
+        # take image and half the size
         R, C = self.screen.raw_screen_buffer_dims()
+        if self.use_screen_memory:
+            self.output_shape = (
+                self.memory_shape + self.mem_padding + (R // 2),
+                C // 2,
+                3,
+            )
+        else:
+            self.output_shape = (R // 2, C // 2, 3)
         self.observation_space = spaces.Box(
-            low=0, high=255, dtype=np.uint8,
-            shape=(R//2, C//2, 3),
+            low=0,
+            high=255,
+            dtype=np.uint8,
+            shape=(self.output_shape),
         )
         self.action_space = spaces.Discrete(len(ACTIONS))
+        print(self.observation_space)
 
     def reset(self, seed=None, options=None):
-        '''Resets the game. Seeding is NOT supported'''
+        """Resets the game. Seeding is NOT supported"""
         load_pyboy_state(self.game, self.initial_state)
         return self.screen.screen_ndarray(), {}
 
     def render(self):
-        return self.screen.screen_ndarray()
+        if self.use_screen_memory:
+            ## (h, w, c) shape
+            pad = np.zeros(
+                shape=(self.mem_padding, self.output_shape[1], 3), dtype=np.uint8
+            )
+
+            r, c, map_n = ram_map.position(self.game)
+            # Update tile map
+            mmap = self.screen_memory[map_n]
+            mmap[r, c] = 255
+
+            # Normal resize does not work on thin paths
+            mem = measure.block_reduce(mmap, (2, 2, 1), np.max)
+            mem = cv2.resize(mem, (self.memory_shape, self.memory_shape))
+
+            data = [mem, pad, self.screen.screen_ndarray()[::2, ::2]]
+
+            return np.concatenate(data, axis=0)
+        else:
+            return self.screen.screen_ndarray()[::2, ::2]
 
     def step(self, action):
         run_action_on_emulator(self.game, self.screen, ACTIONS[action], self.headless)
@@ -95,20 +151,31 @@ class Base:
 
 
 class Environment(Base):
-    def __init__(self, rom_path='pokemon_red.gb',
-            state_path=None, headless=True, quiet=False, verbose=False, **kwargs):
+    def __init__(
+        self,
+        rom_path="pokemon_red.gb",
+        state_path=None,
+        headless=True,
+        quiet=False,
+        verbose=False,
+        **kwargs,
+    ):
         super().__init__(rom_path, state_path, headless, quiet, **kwargs)
         self.counts_map = np.zeros((444, 365))
         self.verbose = verbose
 
     def reset(self, seed=None, options=None, max_episode_steps=20480, reward_scale=4.0):
-        '''Resets the game. Seeding is NOT supported'''
+        """Resets the game. Seeding is NOT supported"""
         load_pyboy_state(self.game, self.initial_state)
 
+        if self.use_screen_memory:
+            self.screen_memory = defaultdict(
+                lambda: np.zeros((256, 256, 3), dtype=np.uint8)
+            )
         self.time = 0
         self.max_episode_steps = max_episode_steps
         self.reward_scale = reward_scale
-         
+
         self.max_events = 0
         self.max_level_sum = 0
         self.max_opponent_level = 0
@@ -122,11 +189,16 @@ class Environment(Base):
         self.last_party_size = 1
         self.last_reward = None
 
-        return self.render()[::2, ::2], {}
+        return self.render(), {}
 
     def step(self, action, fast_video=True):
-        run_action_on_emulator(self.game, self.screen, ACTIONS[action],
-            self.headless, fast_video=fast_video)
+        run_action_on_emulator(
+            self.game,
+            self.screen,
+            ACTIONS[action],
+            self.headless,
+            fast_video=fast_video,
+        )
         self.time += 1
 
         # Exploration reward
@@ -146,7 +218,7 @@ class Environment(Base):
         if self.max_level_sum < 30:
             level_reward = 1 * self.max_level_sum
         else:
-            level_reward = 30 + (self.max_level_sum - 30)/4
+            level_reward = 30 + (self.max_level_sum - 30) / 4
 
         # Healing and death rewards
         hp = ram_map.hp(self.game)
@@ -161,7 +233,7 @@ class Environment(Base):
         if hp <= 0 and self.last_hp > 0:
             self.death_count += 1
             self.is_dead = True
-        elif hp > 0.01: # TODO: Check if this matters
+        elif hp > 0.01:  # TODO: Check if this matters
             self.is_dead = False
 
         # Update last known values for next iteration
@@ -188,9 +260,15 @@ class Environment(Base):
 
         money = ram_map.money(self.game)
 
-        reward = self.reward_scale * (event_reward + level_reward + 
-            opponent_level_reward + death_reward + badges_reward +
-            healing_reward + exploration_reward)
+        reward = self.reward_scale * (
+            event_reward
+            + level_reward
+            + opponent_level_reward
+            + death_reward
+            + badges_reward
+            + healing_reward
+            + exploration_reward
+        )
 
         # Subtract previous reward
         # TODO: Don't record large cumulative rewards in the first place
@@ -206,41 +284,41 @@ class Environment(Base):
         done = self.time >= self.max_episode_steps
         if done:
             info = {
-                'reward': {
-                    'delta': reward,
-                    'event': event_reward,
-                    'level': level_reward,
-                    'opponent_level': opponent_level_reward,
-                    'death': death_reward,
-                    'badges': badges_reward,
-                    'healing': healing_reward,
-                    'exploration': exploration_reward,
+                "reward": {
+                    "delta": reward,
+                    "event": event_reward,
+                    "level": level_reward,
+                    "opponent_level": opponent_level_reward,
+                    "death": death_reward,
+                    "badges": badges_reward,
+                    "healing": healing_reward,
+                    "exploration": exploration_reward,
                 },
-                'maps_explored': len(self.seen_maps),
-                'party_size': party_size,
-                'highest_pokemon_level': max(party_levels),
-                'total_party_level': sum(party_levels),
-                'deaths': self.death_count,
-                'badge_1': float(badges == 1),
-                'badge_2': float(badges > 1),
-                'event': events,
-                'money': money,
-                'pokemon_exploration_map': self.counts_map,
+                "maps_explored": len(self.seen_maps),
+                "party_size": party_size,
+                "highest_pokemon_level": max(party_levels),
+                "total_party_level": sum(party_levels),
+                "deaths": self.death_count,
+                "badge_1": float(badges == 1),
+                "badge_2": float(badges > 1),
+                "event": events,
+                "money": money,
+                "pokemon_exploration_map": self.counts_map,
             }
 
         if self.verbose:
             print(
-                f'steps: {self.time}',
-                f'exploration reward: {exploration_reward}',
-                f'level_Reward: {level_reward}',
-                f'healing: {healing_reward}',
-                f'death: {death_reward}',
-                f'op_level: {opponent_level_reward}',
-                f'badges reward: {badges_reward}',
-                f'event reward: {event_reward}',
-                f'money: {money}',
-                f'ai reward: {reward}',
-                f'Info: {info}',
+                f"steps: {self.time}",
+                f"exploration reward: {exploration_reward}",
+                f"level_Reward: {level_reward}",
+                f"healing: {healing_reward}",
+                f"death: {death_reward}",
+                f"op_level: {opponent_level_reward}",
+                f"badges reward: {badges_reward}",
+                f"event reward: {event_reward}",
+                f"money: {money}",
+                f"ai reward: {reward}",
+                f"Info: {info}",
             )
 
-        return self.render()[::2, ::2], reward, done, done, info
+        return self.render(), reward, done, done, info

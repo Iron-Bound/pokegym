@@ -111,7 +111,9 @@ class Base:
         self.action_space = spaces.Discrete(len(ACTIONS))
 
     def save_state(self):
-        state = self.game.save_state(io.BytesIO())
+        state = io.BytesIO()
+        state.seek(0)
+        self.game.save_state(state)
         self.initial_states.append(state)
 
     def load_random_state(self):

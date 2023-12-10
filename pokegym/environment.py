@@ -4,9 +4,6 @@ import numpy as np
 from collections import defaultdict
 import os
 
-from skimage import measure
-import cv2
-
 from pokegym.pyboy_binding import (
     ACTIONS,
     make_env,
@@ -96,49 +93,60 @@ class Base:
         self.memory_shape = 80
         self.use_screen_memory = True
 
-        # take image and half the size
         R, C = self.screen.raw_screen_buffer_dims()
+        self.obs_size = (R // 2, C // 2)
+
         if self.use_screen_memory:
-            self.output_shape = (
-                self.memory_shape + self.mem_padding + (R // 2),
-                C // 2,
-                3,
-            )
+            self.obs_size += (4,)
         else:
-            self.output_shape = (R // 2, C // 2, 3)
+            self.obs_size += (3,)
         self.observation_space = spaces.Box(
-            low=0,
-            high=255,
-            dtype=np.uint8,
-            shape=(self.output_shape),
+            low=0, high=255, dtype=np.uint8, shape=self.obs_size
         )
         self.action_space = spaces.Discrete(len(ACTIONS))
-        print(self.observation_space)
+        # print(self.observation_space)
 
     def reset(self, seed=None, options=None):
         """Resets the game. Seeding is NOT supported"""
         load_pyboy_state(self.game, self.initial_state)
         return self.screen.screen_ndarray(), {}
 
+    def get_fixed_window(self, arr, y, x, window_size):
+        height, width = arr.shape
+        h_w, w_w = window_size[0] // 2, window_size[1] // 2
+
+        y_min = max(0, y - h_w)
+        y_max = min(height, y + h_w + (window_size[0] % 2))
+        x_min = max(0, x - w_w)
+        x_max = min(width, x + w_w + (window_size[1] % 2))
+
+        window = arr[y_min:y_max, x_min:x_max]
+
+        pad_top = h_w - (y - y_min)
+        pad_bottom = h_w + (window_size[0] % 2) - 1 - (y_max - y - 1)
+        pad_left = w_w - (x - x_min)
+        pad_right = w_w + (window_size[1] % 2) - 1 - (x_max - x - 1)
+
+        return np.pad(
+            window, ((pad_top, pad_bottom), (pad_left, pad_right)), mode="constant"
+        )
+
     def render(self):
         if self.use_screen_memory:
-            ## (h, w, c) shape
-            pad = np.zeros(
-                shape=(self.mem_padding, self.output_shape[1], 3), dtype=np.uint8
-            )
-
             r, c, map_n = ram_map.position(self.game)
             # Update tile map
             mmap = self.screen_memory[map_n]
             mmap[r, c] = 255
 
-            # Normal resize does not work on thin paths
-            mem = measure.block_reduce(mmap, (2, 2, 1), np.max)
-            mem = cv2.resize(mem, (self.memory_shape, self.memory_shape))
-
-            data = [mem, pad, self.screen.screen_ndarray()[::2, ::2]]
-
-            return np.concatenate(data, axis=0)
+            return np.concatenate(
+                (
+                    self.screen.screen_ndarray()[::2, ::2],
+                    self.get_fixed_window(mmap, r, c, self.observation_space.shape)[
+                        ..., np.newaxis
+                    ],
+                ),
+                axis=2,
+            )
         else:
             return self.screen.screen_ndarray()[::2, ::2]
 
@@ -170,7 +178,7 @@ class Environment(Base):
 
         if self.use_screen_memory:
             self.screen_memory = defaultdict(
-                lambda: np.zeros((256, 256, 3), dtype=np.uint8)
+                lambda: np.zeros((444, 365), dtype=np.uint8)
             )
         self.time = 0
         self.max_episode_steps = max_episode_steps

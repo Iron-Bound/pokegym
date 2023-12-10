@@ -1,8 +1,10 @@
 from pdb import set_trace as T
 from gymnasium import Env, spaces
 import numpy as np
+
 from collections import defaultdict
-import os
+import io, os
+import random
 
 from pokegym.pyboy_binding import (
     ACTIONS,
@@ -87,7 +89,7 @@ class Base:
 
         self.game, self.screen = make_env(rom_path, headless, quiet, **kwargs)
 
-        self.initial_state = open_state_file(state_path)
+        self.initial_states = [open_state_file(state_path)]
         self.headless = headless
         self.mem_padding = 2
         self.memory_shape = 80
@@ -97,6 +99,9 @@ class Base:
         self.obs_size = (R // 2, C // 2)
 
         if self.use_screen_memory:
+            self.screen_memory = defaultdict(
+                lambda: np.zeros((255, 255, 1), dtype=np.uint8)
+            )
             self.obs_size += (4,)
         else:
             self.obs_size += (3,)
@@ -104,15 +109,22 @@ class Base:
             low=0, high=255, dtype=np.uint8, shape=self.obs_size
         )
         self.action_space = spaces.Discrete(len(ACTIONS))
-        # print(self.observation_space)
+
+    def save_state(self):
+        state = self.game.save_state(io.BytesIO())
+        self.initial_states.append(state)
+
+    def load_random_state(self):
+        rand_idx = random.randint(0, len(self.initial_states) - 1)
+        return self.initial_states[rand_idx]
 
     def reset(self, seed=None, options=None):
         """Resets the game. Seeding is NOT supported"""
-        load_pyboy_state(self.game, self.initial_state)
+        load_pyboy_state(self.game, self.load_random_state())
         return self.screen.screen_ndarray(), {}
 
     def get_fixed_window(self, arr, y, x, window_size):
-        height, width = arr.shape
+        height, width, _ = arr.shape
         h_w, w_w = window_size[0] // 2, window_size[1] // 2
 
         y_min = max(0, y - h_w)
@@ -128,7 +140,9 @@ class Base:
         pad_right = w_w + (window_size[1] % 2) - 1 - (x_max - x - 1)
 
         return np.pad(
-            window, ((pad_top, pad_bottom), (pad_left, pad_right)), mode="constant"
+            window,
+            ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)),
+            mode="constant",
         )
 
     def render(self):
@@ -141,9 +155,7 @@ class Base:
             return np.concatenate(
                 (
                     self.screen.screen_ndarray()[::2, ::2],
-                    self.get_fixed_window(mmap, r, c, self.observation_space.shape)[
-                        ..., np.newaxis
-                    ],
+                    self.get_fixed_window(mmap, r, c, self.observation_space.shape),
                 ),
                 axis=2,
             )
@@ -174,15 +186,16 @@ class Environment(Base):
 
     def reset(self, seed=None, options=None, max_episode_steps=20480, reward_scale=4.0):
         """Resets the game. Seeding is NOT supported"""
-        load_pyboy_state(self.game, self.initial_state)
+        load_pyboy_state(self.game, self.load_random_state())
 
         if self.use_screen_memory:
             self.screen_memory = defaultdict(
-                lambda: np.zeros((444, 365), dtype=np.uint8)
+                lambda: np.zeros((255, 255, 1), dtype=np.uint8)
             )
         self.time = 0
         self.max_episode_steps = max_episode_steps
         self.reward_scale = reward_scale
+        self.prev_map_n = None
 
         self.max_events = 0
         self.max_level_sum = 0
@@ -212,7 +225,13 @@ class Environment(Base):
         # Exploration reward
         r, c, map_n = ram_map.position(self.game)
         self.seen_coords.add((r, c, map_n))
-        self.seen_maps.add(map_n)
+
+        if map_n != self.prev_map_n:
+            self.prev_map_n = map_n
+            if map_n not in self.seen_maps:
+                self.seen_maps.add(map_n)
+                self.save_state()
+
         exploration_reward = 0.01 * len(self.seen_coords)
         glob_r, glob_c = game_map.local_to_global(r, c, map_n)
         try:

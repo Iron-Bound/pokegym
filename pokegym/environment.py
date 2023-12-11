@@ -152,7 +152,8 @@ class Base:
             r, c, map_n = ram_map.position(self.game)
             # Update tile map
             mmap = self.screen_memory[map_n]
-            mmap[r, c] = 255
+            if 0 <= r <= 254 and 0 <= c <= 254:
+                mmap[r, c] = 255
 
             return np.concatenate(
                 (

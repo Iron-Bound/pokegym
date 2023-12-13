@@ -20,6 +20,7 @@ ENEMY_POKE_COUNT = 0xD89C
 EVENT_FLAGS_START_ADDR = 0xD747
 EVENT_FLAGS_END_ADDR = 0xD761
 MUSEUM_TICKET_ADDR = 0xD754
+USED_CELL_SEPARATOR_ADDR = 0xD7F2
 MONEY_ADDR_1 = 0xD347
 MONEY_ADDR_100 = 0xD348
 MONEY_ADDR_10000 = 0xD349
@@ -90,6 +91,10 @@ def money(game):
 def badges(game):
     badges = game.get_memory_value(BADGE_1_ADDR)
     return bit_count(badges)
+
+def saved_bill(game):
+    '''Restored Bill from his experiment'''
+    return int(read_bit(game, USED_CELL_SEPARATOR_ADDR, 3))
 
 def events(game):
     '''Adds up all event flags, exclude museum ticket'''

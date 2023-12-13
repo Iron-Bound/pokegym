@@ -245,10 +245,10 @@ class Environment(Base):
         # Level reward
         party, party_size, party_levels = ram_map.party(self.game)
         self.max_level_sum = max(self.max_level_sum, sum(party_levels))
-        if self.max_level_sum < 30:
-            level_reward = 1 * self.max_level_sum
-        else:
-            level_reward = 30 + (self.max_level_sum - 30) / 4
+        # if self.max_level_sum < 30:
+        level_reward = 1 * self.max_level_sum
+        # else:
+        #     level_reward = 30 + (self.max_level_sum - 30) / 4
 
         # Healing and death rewards
         hp = ram_map.hp(self.game)
@@ -283,6 +283,10 @@ class Environment(Base):
         badges = ram_map.badges(self.game)
         badges_reward = 5 * badges
 
+        # Saved Bill
+        bill_state = ram_map.saved_bill(self.game)
+        bill_reward = 5 * bill_state
+
         # Event reward
         events = ram_map.events(self.game)
         self.max_events = max(self.max_events, events)
@@ -292,6 +296,7 @@ class Environment(Base):
 
         reward = self.reward_scale * (
             event_reward
+            + bill_reward
             + level_reward
             + opponent_level_reward
             + death_reward
@@ -321,6 +326,7 @@ class Environment(Base):
                     "opponent_level": opponent_level_reward,
                     "death": death_reward,
                     "badges": badges_reward,
+                    "bill_saved": bill_reward,
                     "healing": healing_reward,
                     "exploration": exploration_reward,
                 },
@@ -329,6 +335,7 @@ class Environment(Base):
                 "highest_pokemon_level": max(party_levels),
                 "total_party_level": sum(party_levels),
                 "deaths": self.death_count,
+                "bill_saved": bill_state,
                 "badge_1": float(badges == 1),
                 "badge_2": float(badges > 1),
                 "event": events,

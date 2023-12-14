@@ -85,7 +85,7 @@ class Base:
     ):
         """Creates a PokemonRed environment"""
         if state_path is None:
-            state_path = __file__.rstrip("environment.py") + "has_pokedex_nballs.state"
+            state_path = __file__.rstrip("environment.py") + "full_team.state"
 
         self.game, self.screen = make_env(rom_path, headless, quiet, **kwargs)
 
@@ -184,17 +184,17 @@ class Environment(Base):
         **kwargs,
     ):
         super().__init__(rom_path, state_path, headless, quiet, **kwargs)
-        self.counts_map = np.zeros((444, 365))
+        self.counts_map = np.zeros((444, 436))
         self.verbose = verbose
 
     def reset(self, seed=None, options=None, max_episode_steps=20480, reward_scale=4.0):
         """Resets the game. Seeding is NOT supported"""
         load_pyboy_state(self.game, self.load_random_state())
 
-        if self.use_screen_memory:
-            self.screen_memory = defaultdict(
-                lambda: np.zeros((255, 255, 1), dtype=np.uint8)
-            )
+        # if self.use_screen_memory:
+        #     self.screen_memory = defaultdict(
+        #         lambda: np.zeros((255, 255, 1), dtype=np.uint8)
+        #     )
         self.time = 0
         self.max_episode_steps = max_episode_steps
         self.reward_scale = reward_scale
@@ -243,12 +243,9 @@ class Environment(Base):
             pass
 
         # Level reward
-        party, party_size, party_levels = ram_map.party(self.game)
+        party_size, party_levels = ram_map.party(self.game)
         self.max_level_sum = max(self.max_level_sum, sum(party_levels))
-        # if self.max_level_sum < 30:
         level_reward = 1 * self.max_level_sum
-        # else:
-        #     level_reward = 30 + (self.max_level_sum - 30) / 4
 
         # Healing and death rewards
         hp = ram_map.hp(self.game)
@@ -283,7 +280,7 @@ class Environment(Base):
         badges = ram_map.badges(self.game)
         badges_reward = 5 * badges
 
-        # Saved Bill
+        # Save Bill
         bill_state = ram_map.saved_bill(self.game)
         bill_reward = 5 * bill_state
 
@@ -336,7 +333,7 @@ class Environment(Base):
                 "total_party_level": sum(party_levels),
                 "deaths": self.death_count,
                 "bill_saved": bill_state,
-                "badge_1": float(badges == 1),
+                "badge_1": float(badges <= 1),
                 "badge_2": float(badges > 1),
                 "event": events,
                 "money": money,

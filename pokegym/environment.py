@@ -192,10 +192,10 @@ class Environment(Base):
         """Resets the game. Seeding is NOT supported"""
         load_pyboy_state(self.game, self.load_random_state())
 
-        # if self.use_screen_memory:
-        #     self.screen_memory = defaultdict(
-        #         lambda: np.zeros((255, 255, 1), dtype=np.uint8)
-        #     )
+        if self.use_screen_memory:
+            self.screen_memory = defaultdict(
+                lambda: np.zeros((255, 255, 1), dtype=np.uint8)
+            )
         self.time = 0
         self.max_episode_steps = max_episode_steps
         self.reward_scale = reward_scale
@@ -335,8 +335,8 @@ class Environment(Base):
                 "total_party_level": sum(party_levels),
                 "deaths": self.death_count,
                 "bill_saved": bill_state,
-                "badge_1": float(badges <= 1),
-                "badge_2": float(badges > 1),
+                "badge_1": float(badges >= 1),
+                "badge_2": float(badges >= 2),
                 "event": events,
                 "money": money,
                 "pokemon_exploration_map": self.counts_map,

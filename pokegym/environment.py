@@ -270,7 +270,7 @@ class Environment(Base):
         self.last_party_size = party_size
 
         # Set rewards
-        healing_reward = self.total_healing
+        healing_reward = self.total_healing * 2
         death_reward = -0.05 * self.death_count
 
         # Opponent level reward
@@ -280,11 +280,11 @@ class Environment(Base):
 
         # Badge reward
         badges = ram_map.badges(self.game)
-        badges_reward = 5 * badges
+        badges_reward = 10 * badges
 
         # Save Bill
         bill_state = ram_map.saved_bill(self.game)
-        bill_reward = 5 * bill_state
+        bill_reward = 10 * bill_state
 
         # Event reward
         events = ram_map.events(self.game)

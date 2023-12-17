@@ -86,15 +86,22 @@ class Base:
     ):
         """Creates a PokemonRed environment"""
         if state_path is None:
-            state_path = __file__.rstrip("environment.py") + "full_team.state"
+            state_path = __file__.rstrip("environment.py") + "saves"
 
         self.game, self.screen = make_env(rom_path, headless, quiet, **kwargs)
 
-        self.initial_states = [open_state_file(state_path)]
+        self.initial_states = list()
+        for file in os.listdir(state_path):
+            if file.endswith(".state"):
+                self.initial_states.append(
+                    open_state_file(os.path.join(state_path, file))
+                )
+
         self.headless = headless
         self.mem_padding = 2
         self.memory_shape = 80
         self.use_screen_memory = True
+        self.window = None
 
         R, C = self.screen.raw_screen_buffer_dims()
         self.obs_size = (R // 2, C // 2)
@@ -104,6 +111,7 @@ class Base:
                 lambda: np.zeros((255, 255, 1), dtype=np.uint8)
             )
             self.obs_size += (4,)
+            self.window = None
         else:
             self.obs_size += (3,)
         self.observation_space = spaces.Box(
@@ -135,18 +143,19 @@ class Base:
         x_min = max(0, x - w_w)
         x_max = min(width, x + w_w + (window_size[1] % 2))
 
-        window = arr[y_min:y_max, x_min:x_max]
+        # window = arr[y_min:y_max, x_min:x_max]
 
         pad_top = h_w - (y - y_min)
         pad_bottom = h_w + (window_size[0] % 2) - 1 - (y_max - y - 1)
         pad_left = w_w - (x - x_min)
         pad_right = w_w + (window_size[1] % 2) - 1 - (x_max - x - 1)
 
-        return np.pad(
-            window,
+        self.window = np.pad(
+            arr[y_min:y_max, x_min:x_max],
             ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)),
             mode="constant",
         )
+        # return self.window
 
     def render(self):
         if self.use_screen_memory:
@@ -156,11 +165,9 @@ class Base:
             if 0 <= r <= 254 and 0 <= c <= 254:
                 mmap[r, c] = 255
 
+            self.get_fixed_window(mmap, r, c, self.observation_space.shape)
             return np.concatenate(
-                (
-                    self.screen.screen_ndarray()[::2, ::2],
-                    self.get_fixed_window(mmap, r, c, self.observation_space.shape),
-                ),
+                (self.screen.screen_ndarray()[::2, ::2], self.window),
                 axis=2,
             )
         else:
@@ -234,7 +241,7 @@ class Environment(Base):
             self.prev_map_n = map_n
             if map_n not in self.seen_maps:
                 self.seen_maps.add(map_n)
-                self.save_state()
+                # self.save_state()
 
         exploration_reward = 0.01 * len(self.seen_coords)
         glob_r, glob_c = game_map.local_to_global(r, c, map_n)

@@ -56,8 +56,8 @@ def position(game):
 def party(game):
     # party = [game.get_memory_value(addr) for addr in PARTY_ADDR]
     party_size = game.get_memory_value(PARTY_SIZE_ADDR)
-    party_levels = [game.get_memory_value(addr) for addr in PARTY_LEVEL_ADDR]
-    return party_size, party_levels
+    party_levels = [x for x in [game.get_memory_value(addr) for addr in PARTY_LEVEL_ADDR] if x > 0]
+    return party_size, party_levels # [x for x in party_levels if x > 0]
 
 
 def opponent(game):

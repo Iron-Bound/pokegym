@@ -5,7 +5,7 @@ import numpy as np
 from collections import defaultdict
 import io, os
 import random
-import statistics
+import math
 
 from pokegym.pyboy_binding import (
     ACTIONS,
@@ -245,9 +245,8 @@ class Environment(Base):
 
         # Level reward
         party_size, party_levels = ram_map.party(self.game)
-        # self.max_level_sum = max(self.max_level_sum, sum(party_levels))
-        median = statistics.median(party_levels)
-        level_reward = sum([i * 0.1 * median for i in party_levels])
+        self.max_level_sum = max(self.max_level_sum, sum(party_levels))
+        level_reward = sum([l * 1 * math.log(l) for l in party_levels])
 
         # Healing and death rewards
         hp = ram_map.hp(self.game)

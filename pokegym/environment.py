@@ -14,7 +14,7 @@ from pokegym.pyboy_binding import (
     load_pyboy_state,
     run_action_on_emulator,
 )
-from pokegym import ram_map, game_map
+from pokegym import ram_map, game_map, sql
 
 
 def play():
@@ -86,16 +86,11 @@ class Base:
     ):
         """Creates a PokemonRed environment"""
         if state_path is None:
-            state_path = __file__.rstrip("environment.py") + "saves"
+            state_path = __file__.rstrip("environment.py") + "has_pokedex_nballs.state"
 
         self.game, self.screen = make_env(rom_path, headless, quiet, **kwargs)
 
-        self.initial_states = list()
-        for file in os.listdir(state_path):
-            if file.endswith(".state"):
-                self.initial_states.append(
-                    open_state_file(os.path.join(state_path, file))
-                )
+        self.initial_state = open_state_file(state_path)
 
         self.headless = headless
         self.mem_padding = 2
@@ -118,20 +113,27 @@ class Base:
             low=0, high=255, dtype=np.uint8, shape=self.obs_size
         )
         self.action_space = spaces.Discrete(len(ACTIONS))
+        self.db = sql.Datastore()
 
-    def save_state(self):
+    def save_state(self, map_n: int, level_total: int, reward: float):
         state = io.BytesIO()
         state.seek(0)
         self.game.save_state(state)
-        self.initial_states.append(state)
+        self.db.write_session(map_n, level_total, reward, state.getvalue())
 
-    def load_random_state(self):
-        rand_idx = random.randint(0, len(self.initial_states) - 1)
-        return self.initial_states[rand_idx]
+    def random_state(self):
+        map_n = random.choice(list(self.seen_maps))
+        ok, b = self.db.get_random(map_n)
+        if ok:
+            state = io.BytesIO(b)
+            state.seek(0)
+            return state
+        else:
+            return self.initial_state
 
     def reset(self, seed=None, options=None):
         """Resets the game. Seeding is NOT supported"""
-        load_pyboy_state(self.game, self.load_random_state())
+        load_pyboy_state(self.game, self.initial_state)
         return self.screen.screen_ndarray(), {}
 
     def get_fixed_window(self, arr, y, x, window_size):
@@ -197,8 +199,6 @@ class Environment(Base):
 
     def reset(self, seed=None, options=None, max_episode_steps=20480, reward_scale=4.0):
         """Resets the game. Seeding is NOT supported"""
-        load_pyboy_state(self.game, self.load_random_state())
-
         if self.use_screen_memory:
             self.screen_memory = defaultdict(
                 lambda: np.zeros((255, 255, 1), dtype=np.uint8)
@@ -206,14 +206,14 @@ class Environment(Base):
         self.time = 0
         self.max_episode_steps = max_episode_steps
         self.reward_scale = reward_scale
-        self.prev_map_n = None
+        self.prev_mapn = 0
 
         self.max_events = 0
         self.max_level_sum = 0
         self.max_opponent_level = 0
 
         self.seen_coords = set()
-        self.seen_maps = set()
+        self.seen_maps = {0}
 
         self.death_count = 0
         self.total_healing = 0
@@ -221,6 +221,7 @@ class Environment(Base):
         self.last_party_size = 1
         self.last_reward = None
 
+        load_pyboy_state(self.game, self.random_state())
         return self.render(), {}
 
     def step(self, action, fast_video=True):
@@ -237,11 +238,9 @@ class Environment(Base):
         r, c, map_n = ram_map.position(self.game)
         self.seen_coords.add((r, c, map_n))
 
-        if map_n != self.prev_map_n:
-            self.prev_map_n = map_n
-            if map_n not in self.seen_maps:
-                self.seen_maps.add(map_n)
-                # self.save_state()
+        if map_n != self.prev_mapn:
+            self.prev_mapn = map_n
+            self.save_state(map_n, self.max_level_sum, self.last_reward)
 
         exploration_reward = 0.01 * len(self.seen_coords)
         glob_r, glob_c = game_map.local_to_global(r, c, map_n)

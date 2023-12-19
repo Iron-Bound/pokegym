@@ -93,12 +93,7 @@
       python3Packages.buildPythonPackage {
         pname = "pokegym";
         version = "0.1.8";
-        src = fetchFromGitHub {
-          owner = "PufferAI";
-          repo = "pokegym";
-          rev = "3d60a8823bdeca78adb69d678cfb4204cc13c583";
-          sha256 = "MKVnqI8mpn6UairOxetr/Vsc1QN1Ds9LM/mVmKIwTvg=";
-        };
+        src = ./pokegym ;
         format = "pyproject";
         nativeBuildInputs = [ python3Packages.setuptools ];
 

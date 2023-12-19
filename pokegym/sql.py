@@ -25,10 +25,6 @@ class Datastore:
         self.conn = sqlite3.connect(self.dbFile)
         self.c = self.conn.cursor()
 
-    def get_mapn(self):
-        self.c.execute("SELECT map_n FROM session ORDER BY RANDOM() LIMIT 1")
-        return self.c.fetchone()
-
     def get_count(self):
         self.c.execute("SELECT COUNT(*) FROM session")
         count = self.c.fetchone()
@@ -39,7 +35,7 @@ class Datastore:
 
     def get_random(self, map_n: int = 0):
         self.c.execute(
-            "SELECT state FROM session WHERE map_n = ? ORDER BY RANDOM() LIMIT 1",
+            "SELECT state FROM session WHERE map_n = ? ORDER BY tlevel LIMIT 1",
             (map_n,),
         )
 

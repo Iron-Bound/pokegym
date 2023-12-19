@@ -17,6 +17,12 @@ from pokegym.pyboy_binding import (
 from pokegym import ram_map, game_map, sql
 
 
+class default_record:
+    def __init__(self):
+        self.level = 0
+        self.reward = 0.0
+
+
 def play():
     """Creates an environment and plays it"""
     env = Environment(
@@ -89,7 +95,6 @@ class Base:
             state_path = __file__.rstrip("environment.py") + "has_pokedex_nballs.state"
 
         self.game, self.screen = make_env(rom_path, headless, quiet, **kwargs)
-
         self.initial_state = open_state_file(state_path)
 
         self.headless = headless
@@ -113,23 +118,6 @@ class Base:
             low=0, high=255, dtype=np.uint8, shape=self.obs_size
         )
         self.action_space = spaces.Discrete(len(ACTIONS))
-        self.db = sql.Datastore()
-
-    def save_state(self, map_n: int, level_total: int, reward: float):
-        state = io.BytesIO()
-        state.seek(0)
-        self.game.save_state(state)
-        self.db.write_session(map_n, level_total, reward, state.getvalue())
-
-    def random_state(self):
-        map_n = random.choice(list(self.seen_maps))
-        ok, b = self.db.get_random(map_n)
-        if ok:
-            state = io.BytesIO(b)
-            state.seek(0)
-            return state
-        else:
-            return self.initial_state
 
     def reset(self, seed=None, options=None):
         """Resets the game. Seeding is NOT supported"""
@@ -195,6 +183,7 @@ class Environment(Base):
     ):
         super().__init__(rom_path, state_path, headless, quiet, **kwargs)
         self.counts_map = np.zeros((444, 436))
+        self.db = sql.Datastore()
         self.verbose = verbose
 
     def reset(self, seed=None, options=None, max_episode_steps=20480, reward_scale=4.0):
@@ -213,7 +202,7 @@ class Environment(Base):
         self.max_opponent_level = 0
 
         self.seen_coords = set()
-        self.seen_maps = {0}
+        self.seen_maps = defaultdict(default_record)
 
         self.death_count = 0
         self.total_healing = 0
@@ -223,6 +212,22 @@ class Environment(Base):
 
         load_pyboy_state(self.game, self.random_state())
         return self.render(), {}
+
+    def save_state(self, map_n: int, level_total: int, reward: float):
+        state = io.BytesIO()
+        state.seek(0)
+        self.game.save_state(state)
+        self.db.write_session(map_n, level_total, reward, state.getvalue())
+
+    def random_state(self):
+        map_n = random.randint(0, 71)
+        ok, b = self.db.get_random(map_n)
+        if ok:
+            state = io.BytesIO(b)
+            state.seek(0)
+            return state
+        else:
+            return self.initial_state
 
     def step(self, action, fast_video=True):
         run_action_on_emulator(
@@ -240,7 +245,11 @@ class Environment(Base):
 
         if map_n != self.prev_mapn:
             self.prev_mapn = map_n
-            self.save_state(map_n, self.max_level_sum, self.last_reward)
+            m = self.seen_maps[map_n]
+            if m.level < self.max_level_sum:
+                m.reward = self.last_reward
+                m.level = self.max_level_sum
+                self.save_state(map_n, self.max_level_sum, self.last_reward)
 
         exploration_reward = 0.01 * len(self.seen_coords)
         glob_r, glob_c = game_map.local_to_global(r, c, map_n)

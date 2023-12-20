@@ -58,7 +58,7 @@ def party(game):
     party_size = game.get_memory_value(PARTY_SIZE_ADDR)
     party = [game.get_memory_value(addr) for addr in PARTY_LEVEL_ADDR]
     if party[0] >= 6:
-        party[0] -= 6
+        party[0] -= 5
     party_levels = [x for x in party if x > 0]
     return party_size, party_levels
 

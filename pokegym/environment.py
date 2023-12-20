@@ -220,8 +220,7 @@ class Environment(Base):
         self.db.write_session(map_n, level_total, reward, state.getvalue())
 
     def random_state(self):
-        map_n = random.randint(0, 71)
-        ok, b = self.db.get_random(map_n)
+        ok, b = self.db.get_random()
         if ok:
             state = io.BytesIO(b)
             state.seek(0)

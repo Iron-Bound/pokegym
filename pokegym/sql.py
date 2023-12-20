@@ -9,6 +9,8 @@ class Datastore:
         self.create()
 
     def create(self):
+        # Create map
+        self.c.execute("CREATE TABLE IF NOT EXISTS map (map_n INTEGER UNIQUE)")
         # Create sessions
         self.c.execute(
             """
@@ -33,10 +35,14 @@ class Datastore:
         except IndexError:
             return 0
 
-    def get_random(self, map_n: int = 0):
+    def get_random(self):
         self.c.execute(
-            "SELECT state FROM session WHERE map_n = ? ORDER BY tlevel LIMIT 1",
-            (map_n,),
+            """
+            SELECT state FROM session WHERE map_n = (
+                SELECT map_n FROM map ORDER BY RANDOM() LIMIT 1
+            )
+            ORDER BY tlevel LIMIT 1
+            """
         )
 
         data = self.c.fetchone()
@@ -59,3 +65,12 @@ class Datastore:
 
         # Commit the transaction
         self.conn.commit()
+
+    def migrate_mapn(self):
+        # move map_n from session to map
+        self.c.execute(
+            """
+                INSERT OR IGNORE INTO map(map_n)
+                SELECT DISTINCT map_n FROM session
+            """
+        )

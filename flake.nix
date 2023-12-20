@@ -92,8 +92,8 @@
     pokegym = with nixpkgs.legacyPackages.x86_64-linux;
       python3Packages.buildPythonPackage {
         pname = "pokegym";
-        version = "0.1.8";
-        src = ./pokegym ;
+        version = "0.1.9";
+        src = ./. ;
         format = "pyproject";
         nativeBuildInputs = [ python3Packages.setuptools ];
 

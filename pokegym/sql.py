@@ -39,7 +39,7 @@ class Datastore:
         self.c.execute(
             """
             SELECT state FROM session WHERE map_n = (
-                SELECT map_n FROM map ORDER BY RANDOM() LIMIT 1
+                SELECT map_n FROM map ORDER BY ABS(RANDOM()) LIMIT 1
             )
             ORDER BY tlevel LIMIT 1
             """
@@ -74,3 +74,4 @@ class Datastore:
                 SELECT DISTINCT map_n FROM session
             """
         )
+        self.conn.commit()
